@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: deals
+      POSTGRES_PASSWORD: deals
+      POSTGRES_DB: deals_bigdata
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/source/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/source/synthetic.sql:/docker-entrypoint-initdb.d/02_synthetic.sql:ro
+      - ./sql/source/ready.sql:/docker-entrypoint-initdb.d/03_ready.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deals -d deals_bigdata && psql -U deals -d deals_bigdata -tAc \"SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'source_ready'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 90
+      start_period: 20s
+    shm_size: 256mb
+
+  pipeline:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: deals
+      PGPASSWORD: deals
+      PGDATABASE: deals_bigdata
+      START_DATE: "2023-01-01"
+      END_DATE: "2027-12-31"
+      AS_OF_DATE: "2026-10-26"
+      MODEL_SEED: "42"
+    volumes:
+      - ./artifacts:/app/artifacts
+    command: ["python", "-m", "run"]
+
+volumes:
+  pgdata:
